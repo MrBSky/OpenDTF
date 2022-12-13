@@ -14,7 +14,7 @@
 #define BTN_OUT 35
 
 #define ASF_CH 0
-#define ASF_FREQ 10
+#define ASF_FREQ 5
 #define ASF_RES 8
 #define ASF_DUTY 128
 
@@ -25,6 +25,11 @@ long oldPosition = -999;
 long newPosition;
 long encoder_active = 0;
 int offsetnewPosition = 50;
+
+long arr_stop[20];
+int chk_stop = 0;
+int offset_chk_stop = 3000;
+uint8_t indexof_arr_stop = 0;
 
 uint8_t PE_state = 0;
 uint8_t btn_pe_state = 0;
@@ -52,16 +57,34 @@ void ASF_Emulator()
   ledcWrite(ASF_CH, ASF_DUTY);
 }
 
+void chk_finish()
+{
+  arr_stop[indexof_arr_stop] = newPosition;
+  indexof_arr_stop++;
+  // Serial.print("index0 ");
+  // Serial.println(arr_stop[0]);
+  // Serial.print("index20 ");
+  // Serial.println(arr_stop[19]);
+
+  if (indexof_arr_stop > 20)
+  {
+    // Serial.println("-----------------------------20 ");
+    indexof_arr_stop = 0;
+    chk_stop = arr_stop[19] - arr_stop[0];
+    // Serial.print("-----------------------------chk_stop ");
+    // Serial.println(chk_stop);
+  }
+}
+
 void Encoder_Task(void *p)
 {
-  Serial.println("Encoder_Task!");
   while (1)
   {
     newPosition = epsonEncoder.getCount() / 2;
-
     if (newPosition != oldPosition)
     {
       oldPosition = newPosition;
+      chk_finish();
       Serial.println(newPosition);
     }
     vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -70,23 +93,34 @@ void Encoder_Task(void *p)
 
 void Ready_To_Print()
 {
-  // while (1)
-  // {
   switch (process_state)
   {
   case p_standby:
-    Serial.println("Standby");
+
     break;
 
   case p_readytoprint:
-    Serial.println("Ready");
-
     if (newPosition >= encoder_active + offsetnewPosition)
     {
+      Serial.println("Start Print");
       digitalWrite(PE_PIN, false);
       digitalWrite(LED, true);
-      Serial.println("Start Print");
       vTaskDelay(5000 / portTICK_PERIOD_MS);
+      process_state = p_print;
+    }
+
+    break;
+
+  case p_print:
+
+    if (chk_stop > offset_chk_stop)
+    {
+      Serial.println("Stop Print");
+      btn_pe_state = Standby;
+      process_state = p_standby;
+
+      digitalWrite(PE_PIN, true);
+      digitalWrite(LED, false);
     }
 
     break;
@@ -109,21 +143,12 @@ void BTN_task(void *p)
         btn_pe_state = Ready;
         encoder_active = newPosition;
         process_state = p_readytoprint;
-
         digitalWrite(LED, true);
-
-        // if (!digitalRead(LED_PRINT))
-        // {
-        //   digitalWrite(BTN_PRINT, true);
-        //   vTaskDelay(100 / portTICK_PERIOD_MS);
-        //   digitalWrite(BTN_PRINT, false);
-        // }
       }
       else if (cur_ready == 0 && btn_pe_state == Ready)
       {
         btn_pe_state = Standby;
         process_state = p_standby;
-
         digitalWrite(PE_PIN, true);
         digitalWrite(LED, false);
       }
