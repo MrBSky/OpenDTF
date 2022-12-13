@@ -1,10 +1,5 @@
 #include <Arduino.h>
-#include <Encoder.h>
-#include <analogWrite.h>
-#include <JC_Button_ESP.h>
-
-unsigned long period = 1000;
-unsigned long last_time = 0;
+#include <ESP32Encoder.h>
 
 #define ASF_PIN 2
 #define PE_PIN 4
@@ -18,14 +13,10 @@ unsigned long last_time = 0;
 #define BTN_IN 34
 #define BTN_OUT 35
 
-#define LED_PRINT 25
-#define BTN_PRINT 26
-#define BTN_CLEAN 27
-
+#define ASF_CH 0
+#define ASF_FREQ 10
+#define ASF_RES 8
 #define ASF_DUTY 128
-#define ASF_TIMER_BIT 8
-#define ASF_BASE_FREQ 10
-#define ASF_PHASE 0
 
 #define Ready 1
 #define Standby 0
@@ -35,18 +26,13 @@ long newPosition;
 long encoder_active = 0;
 int offsetnewPosition = 50;
 
-long arr_stop[20];
-int chk_stop = 0;
-int offset_chk_stop = 3000;
-uint8_t indexof_arr_stop = 0;
-
 uint8_t PE_state = 0;
 uint8_t btn_pe_state = 0;
 
 uint8_t last_value0 = 0, last_value1 = 0, last_value2 = 0;
 uint8_t cur_ready = 0, cur_in = 0, cur_out = 0;
 
-Encoder epsonEncoder(encoderA, encoderB);
+ESP32Encoder epsonEncoder;
 
 enum state
 {
@@ -59,70 +45,52 @@ enum state
 
 enum state process_state = p_standby;
 
-xTaskHandle TaskHandle_1;
-xTaskHandle TaskHandle_2;
-xTaskHandle TaskHandle_3;
-
-void readme()
+void ASF_Emulator()
 {
-  Serial.begin(9600);
-  Serial.println("");
-  Serial.println("**********************************");
-  Serial.println("* Hello,                         *");
-  Serial.println("* DFT Roll To Roll Controller    *");
-  Serial.println("* It was developed by mr.blueSky *");
-  Serial.println("* Facebook: Sirapop Ruankham     *");
-  Serial.println("* Website: www.oldmanlaser.com   *");
-  Serial.println("**********************************");
-  Serial.println("");
+  ledcSetup(ASF_CH, ASF_FREQ, ASF_RES);
+  ledcAttachPin(ASF_PIN, ASF_CH);
+  ledcWrite(ASF_CH, ASF_DUTY);
+}
+
+void Encoder_Task(void *p)
+{
+  Serial.println("Encoder_Task!");
+  while (1)
+  {
+    newPosition = epsonEncoder.getCount() / 2;
+
+    if (newPosition != oldPosition)
+    {
+      oldPosition = newPosition;
+      Serial.println(newPosition);
+    }
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+  }
 }
 
 void Ready_To_Print()
 {
+  // while (1)
+  // {
   switch (process_state)
   {
-
-  case p_stepfinish:
-
-    break;
-
   case p_standby:
-
+    Serial.println("Standby");
     break;
 
   case p_readytoprint:
+    Serial.println("Ready");
 
     if (newPosition >= encoder_active + offsetnewPosition)
     {
       digitalWrite(PE_PIN, false);
       digitalWrite(LED, true);
-
+      Serial.println("Start Print");
       vTaskDelay(5000 / portTICK_PERIOD_MS);
-      process_state = p_print;
     }
 
-    break;
-
-  case p_print:
-
-    if (chk_stop > offset_chk_stop)
-    {
-      process_state = p_printfinish;
-      btn_pe_state = Standby;
-
-      digitalWrite(PE_PIN, true);
-      digitalWrite(LED, false);
-    }
-
-    break;
-
-  case p_printfinish:
-
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-    process_state = p_standby;
     break;
   }
-
   vTaskDelay(100 / portTICK_PERIOD_MS);
 }
 
@@ -144,12 +112,12 @@ void BTN_task(void *p)
 
         digitalWrite(LED, true);
 
-        if (!digitalRead(LED_PRINT))
-        {
-          digitalWrite(BTN_PRINT, true);
-          vTaskDelay(100 / portTICK_PERIOD_MS);
-          digitalWrite(BTN_PRINT, false);
-        }
+        // if (!digitalRead(LED_PRINT))
+        // {
+        //   digitalWrite(BTN_PRINT, true);
+        //   vTaskDelay(100 / portTICK_PERIOD_MS);
+        //   digitalWrite(BTN_PRINT, false);
+        // }
       }
       else if (cur_ready == 0 && btn_pe_state == Ready)
       {
@@ -194,39 +162,14 @@ void BTN_task(void *p)
   }
 }
 
-void ASF_Emulator()
+void set_init()
 {
-  analogWrite(ASF_PIN, ASF_DUTY, ASF_BASE_FREQ, ASF_TIMER_BIT, ASF_PHASE);
-  // printPinsStatus();
-}
-
-void Encoder_Task(void *p)
-{
-  while (1)
-  {
-    newPosition = epsonEncoder.read();
-    if (newPosition != oldPosition)
-    {
-      oldPosition = newPosition;
-    }
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-  }
-}
-
-void setup()
-{
-  readme();
-
-  ASF_Emulator();
+  Serial.begin(9600);
 
   pinMode(BTN_IN, INPUT);
   pinMode(BTN_OUT, INPUT);
   pinMode(BTN_READY, INPUT);
   pinMode(LED, OUTPUT);
-
-  pinMode(BTN_PRINT, OUTPUT);
-  pinMode(BTN_CLEAN, OUTPUT);
-  pinMode(LED_PRINT, INPUT);
 
   pinMode(ASF_PIN, OUTPUT);
   pinMode(PE_PIN, OUTPUT);
@@ -234,8 +177,16 @@ void setup()
   pinMode(FEED_OUT_PIN, OUTPUT);
   digitalWrite(PE_PIN, true);
 
-  xTaskCreate(&Encoder_Task, "Encoder_Task", 2048, NULL, 10, NULL);
+  epsonEncoder.attachHalfQuad(encoderA, encoderB);
+  epsonEncoder.setCount(0);
+}
+
+void setup()
+{
+  set_init();
+  ASF_Emulator();
   xTaskCreate(&BTN_task, "BTN_task", 2048, NULL, 10, NULL);
+  xTaskCreate(&Encoder_Task, "Encoder_Task", 2048, NULL, 10, NULL);
 }
 
 void loop()
