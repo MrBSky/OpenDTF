@@ -71,8 +71,8 @@ void chk_finish()
     // Serial.println("-----------------------------20 ");
     indexof_arr_stop = 0;
     chk_stop = arr_stop[19] - arr_stop[0];
-    // Serial.print("-----------------------------chk_stop ");
-    // Serial.println(chk_stop);
+    Serial.print("-----------------------------chk_stop ");
+    Serial.println(chk_stop);
   }
 }
 
